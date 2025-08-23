@@ -1,0 +1,11 @@
+{
+  "name": "my-grammar-fixer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Chrome extension + Vercel serverless backend for grammar correction with Gemini",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/grammar.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "framework": null
+}
