@@ -47,3 +47,4 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }
   })(); // immediately invoked async function
 });
+
