@@ -1,4 +1,4 @@
-const response = await fetch("https://your-app.vercel.app/api/grammar", {
+const response = await fetch("https://grammar-corrector-extension-2.vercel.app/api/grammar", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ text: selectedText })
