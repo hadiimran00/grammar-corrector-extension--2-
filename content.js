@@ -7,36 +7,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const fixedText = request.fixedText;
     const active = document.activeElement;
 
-    // Format for HTML editors
- function formatTextToHTML(text) {
-  return text
-    // Split into paragraphs by 2+ newlines
-    .split(/\n\s*\n+/)
-    .map(paragraph =>
-      paragraph
-        .split("\n")
-        .map(line => line.trim())
-        .join("<br>")
-    )
-    // Wrap paragraphs with <p> for consistent spacing
-    .map(p => `<p>${p}</p>`)
-    .join("");
-}
+    // Format helper (paragraphs + line breaks preserved)
+    function formatTextToHTML(text) {
+      return text
+        // Split into paragraphs by 2+ newlines
+        .split(/\n\s*\n+/)
+        .map(paragraph =>
+          paragraph
+            .split("\n")
+            .map(line => line.trim())
+            .join("<br>")
+        )
+        .map(p => `<p>${p}</p>`)
+        .join("");
+    }
 
-const formattedHTML = formatTextToHTML(fixedText);
+    const formattedHTML = formatTextToHTML(fixedText);
 
+    // ✅ CASE 1: Rich text editors (WhatsApp, Messenger, LinkedIn, Gmail, Notion, etc.)
+    if (active && active.isContentEditable) {
+      console.log("Replacing inside contentEditable element (rich text editor).");
 
-
-    // CASE 1: WhatsApp / Messenger / LinkedIn (Lexical/Draft.js editors)
-    if (active && active.isContentEditable && active.dataset.lexicalEditor !== undefined) {
-      console.log("Replacing inside Lexical editor (WhatsApp/Messenger/LinkedIn).");
-
+      // Replace content with plain text span (to avoid weird <br><div> issues)
       active.innerHTML = "";
       const span = document.createElement("span");
       span.innerText = fixedText;
       active.appendChild(span);
 
-      // Trigger React/Lexical update
+      // Trigger React/Lexical update so app detects change
       const event = new InputEvent("input", {
         bubbles: true,
         cancelable: true,
@@ -49,20 +47,12 @@ const formattedHTML = formatTextToHTML(fixedText);
       return;
     }
 
-    // CASE 2: Standard contentEditable (Gmail, Outlook, Notion, etc.)
-    if (active && active.isContentEditable) {
-      console.log("Replacing inside standard contentEditable element.");
-      active.innerHTML = formattedHTML;
-      sendResponse({ success: true });
-      return;
-    }
-
-    // CASE 3: Textarea / input
+    // ✅ CASE 2: Textareas / input fields
     if (active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT")) {
       console.log("Replacing inside textarea/input.");
       active.value = fixedText;
 
-      // Dispatch input event so frameworks detect change
+      // Fire event so frameworks (React/Vue/etc.) detect change
       const event = new Event("input", { bubbles: true });
       active.dispatchEvent(event);
 
@@ -70,7 +60,7 @@ const formattedHTML = formatTextToHTML(fixedText);
       return;
     }
 
-    // CASE 4: Fallback → replace via selection (rare case)
+    // ✅ CASE 3: Fallback → replace text at current selection
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       console.log("Fallback: replacing selection directly.");
@@ -89,6 +79,7 @@ const formattedHTML = formatTextToHTML(fixedText);
       return;
     }
 
+    // ❌ If nothing matched
     sendResponse({ success: false, error: "No valid target for replacement" });
   }
 });
