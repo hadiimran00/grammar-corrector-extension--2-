@@ -1,85 +1,77 @@
-console.log("Content script loaded");
+console.log("✅ content.js ready");
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log("Received message:", request);
-
-  if (request.action === "replaceSelectedText") {
-    const fixedText = request.fixedText;
-    const active = document.activeElement;
-
-    // Format helper (paragraphs + line breaks preserved)
-    function formatTextToHTML(text) {
-      return text
-        // Split into paragraphs by 2+ newlines
-        .split(/\n\s*\n+/)
-        .map(paragraph =>
-          paragraph
-            .split("\n")
-            .map(line => line.trim())
-            .join("<br>")
-        )
-        .map(p => `<p>${p}</p>`)
-        .join("");
-    }
-
-    const formattedHTML = formatTextToHTML(fixedText);
-
-    // ✅ CASE 1: Rich text editors (WhatsApp, Messenger, LinkedIn, Gmail, Notion, etc.)
-    if (active && active.isContentEditable) {
-      console.log("Replacing inside contentEditable element (rich text editor).");
-
-      // Replace content with plain text span (to avoid weird <br><div> issues)
-      active.innerHTML = "";
-      const span = document.createElement("span");
-      span.innerText = fixedText;
-      active.appendChild(span);
-
-      // Trigger React/Lexical update so app detects change
-      const event = new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: fixedText
-      });
-      active.dispatchEvent(event);
-
-      sendResponse({ success: true });
-      return;
-    }
-
-    // ✅ CASE 2: Textareas / input fields
-    if (active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT")) {
-      console.log("Replacing inside textarea/input.");
-      active.value = fixedText;
-
-      // Fire event so frameworks (React/Vue/etc.) detect change
-      const event = new Event("input", { bubbles: true });
-      active.dispatchEvent(event);
-
-      sendResponse({ success: true });
-      return;
-    }
-
-    // ✅ CASE 3: Fallback → replace text at current selection
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      console.log("Fallback: replacing selection directly.");
-      const range = selection.getRangeAt(0);
-      range.deleteContents();
-
-      const tempDiv = document.createElement("div");
-      tempDiv.innerHTML = formattedHTML;
-      const frag = document.createDocumentFragment();
-      while (tempDiv.firstChild) {
-        frag.appendChild(tempDiv.firstChild);
-      }
-      range.insertNode(frag);
-
-      sendResponse({ success: true });
-      return;
-    }
-
-    // ❌ If nothing matched
-    sendResponse({ success: false, error: "No valid target for replacement" });
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  // handshake
+  if (req.ping) {
+    sendResponse({ pong: true });
+    return true;
   }
+
+  if (req.action !== "replaceSelectedText") return;
+
+  const fixedText = req.fixedText;
+
+  // Special handling for WhatsApp Web (run this FIRST)
+  const waInput = document.querySelector('[contenteditable="true"][data-tab="10"][role="textbox"]');
+  if (waInput) {
+    console.log("⚡ Detected WhatsApp input box");
+
+    // Clear old text
+    waInput.innerHTML = "";
+
+    // Select all text inside the box
+    const range = document.createRange();
+    range.selectNodeContents(waInput);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    // Try WhatsApp's preferred method
+    const execSuccess = document.execCommand("insertText", false, fixedText);
+
+    // Fallback if execCommand fails
+    if (!execSuccess) {
+      waInput.innerText = fixedText;
+    }
+
+    // Dispatch input event so WhatsApp re-renders the box
+    waInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
+    sendResponse({ success: true, replaced: "whatsapp" });
+    return true;
+  }
+
+  const active = document.activeElement;
+
+  // Case 1: Rich text editors
+  if (active && active.isContentEditable) {
+    active.innerHTML = "";
+    const span = document.createElement("span");
+    span.innerText = fixedText;
+    active.appendChild(span);
+    active.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    sendResponse({ success: true });
+    return true;
+  }
+
+  // Case 2: Inputs & textareas
+  if (active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT")) {
+    active.value = fixedText;
+    active.dispatchEvent(new Event("input", { bubbles: true }));
+    sendResponse({ success: true });
+    return true;
+  }
+
+  // Case 3: Selection fallback
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(fixedText));
+    sendResponse({ success: true });
+    return true;
+  }
+
+  sendResponse({ success: false, error: "No valid target" });
+  return true;
 });

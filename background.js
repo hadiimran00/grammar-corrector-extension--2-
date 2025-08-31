@@ -1,6 +1,5 @@
 // background.js
 
-// Create the context menu when extension installs
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "fixGrammar",
@@ -9,42 +8,70 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Handle context menu clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  (async () => {
-    try {
-      const selectedText = info.selectionText;
-
-      // Call your Vercel middleware API
-      const response = await fetch("https://grammar-corrector-extension-2.vercel.app/api/grammar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: selectedText })
-      });
-
-      const result = await response.json();
-      const fixed = result?.corrected?.trim();
-
-      console.log("Grammar API result:", result);
-
-      if (!fixed) {
-        console.warn("No corrected text returned.");
-        return;
-      }
-
-      // Send message to content script (already injected by manifest.json)
-      chrome.tabs.sendMessage(tab.id, {
-        action: "replaceSelectedText",
-        fixedText: fixed
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error sending to content.js:", chrome.runtime.lastError.message);
+// Helper: send message reliably with retries
+function sendMessageWithRetry(tabId, msg, retries = 5) {
+  return new Promise((resolve, reject) => {
+    function attempt(n) {
+      chrome.tabs.sendMessage(tabId, msg, (res) => {
+        if (chrome.runtime.lastError || !res) {
+          if (n > 0) {
+            console.warn("Retrying message, attempts left:", n);
+            setTimeout(() => attempt(n - 1), 200); // wait 200ms then retry
+          } else {
+            reject(chrome.runtime.lastError);
+          }
+        } else {
+          resolve(res);
         }
       });
-
-    } catch (err) {
-      console.error("Error calling grammar API:", err);
     }
-  })(); // immediately invoked async function
-});
+    attempt(retries);
+  });
+}
 
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  try {
+    const selectedText = info.selectionText;
+    if (!selectedText) return;
+
+    if (!/^https?:|^file:/.test(tab.url)) {
+      console.warn("Skipping unsupported page:", tab.url);
+      return;
+    }
+
+    // Call API
+    const response = await fetch("https://grammar-corrector-extension-2.vercel.app/api/grammar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: selectedText })
+    });
+
+    const result = await response.json();
+    const fixed = result?.corrected?.trim();
+    if (!fixed) return;
+
+    // Try ping → if fails, inject content.js
+    chrome.tabs.sendMessage(tab.id, { ping: true }, async (res) => {
+      if (chrome.runtime.lastError || !res?.pong) {
+        console.warn("Injecting content.js...");
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+
+        // Now retry with handshake and replacement
+        await sendMessageWithRetry(tab.id, {
+          action: "replaceSelectedText",
+          fixedText: fixed,
+          originalText: selectedText
+        });
+      } else {
+        // Content script is alive, send replacement
+        await sendMessageWithRetry(tab.id, {
+          action: "replaceSelectedText",
+          fixedText: fixed,
+          originalText: selectedText
+        });
+      }
+    });
+  } catch (err) {
+    console.error("Error in background.js:", err);
+  }
+});
