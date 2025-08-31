@@ -4,7 +4,10 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "fixGrammar",
     title: "Fix Grammar with Gemini",
-    contexts: ["selection"]
+    contexts: ["selection"],
+    icons: {
+      "16": "icon.webp"
+    }
   });
 });
 
