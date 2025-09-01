@@ -1,13 +1,10 @@
-// background.js
+
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "fixGrammar",
     title: "Fix Grammar with Gemini",
-    contexts: ["selection"],
-    icons: {
-      "16": "icon.webp"
-    }
+    contexts: ["selection"]
   });
 });
 
